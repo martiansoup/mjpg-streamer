@@ -54,8 +54,17 @@ typedef struct {
     LibCamera camera;
     context_settings *init_settings;
     struct vdIn *videoIn;
+    int pan;
+    int tilt;
+    int brightness;
 } context;
 
+const int AXIS_MIN = -90;
+const int AXIS_MAX = 90;
+const int AXIS_STEP = 5;
+const int NEOP_MIN = 0;
+const int NEOP_MAX = 200;
+const int NEOP_STEP = 10;
 
 void *worker_thread(void *);
 void worker_cleanup(void *);
@@ -68,7 +77,7 @@ static void help() {
     
     fprintf(stderr,
     " ---------------------------------------------------------------\n" \
-    " Help for input plugin..: "INPUT_PLUGIN_NAME"\n" \
+    " Help for input plugin..: " INPUT_PLUGIN_NAME "\n" \
     " ---------------------------------------------------------------\n" \
     " The following parameters can be passed to this plugin:\n\n" \
     " [-r | --resolution ]...: the resolution of the video device,\n" \
@@ -114,7 +123,7 @@ Return Value: 0 if everything is ok
 ******************************************************************************/
 
 int input_init(input_parameter *param, int plugin_no)
-{   
+{
     // char *device = "/dev/video0";
     int width = 640, height = 480, stride, i, device_idx;
     
@@ -127,21 +136,75 @@ int input_init(input_parameter *param, int plugin_no)
     bool controls_flag = false;
     
     pctx = new context();
+    pctx->pan = 0;
+    pctx->tilt = 0;
+    pctx->brightness = 0;
     
     settings = pctx->init_settings = init_settings();
     pglobal = param->global;
     in = &pglobal->in[plugin_no];
     in->context = pctx;
 
-    control libcamera_AfTrigger_ctrl;
-	libcamera_AfTrigger_ctrl.group = IN_CMD_GENERIC;
-	libcamera_AfTrigger_ctrl.ctrl.id = 1;
-	libcamera_AfTrigger_ctrl.ctrl.type = V4L2_CTRL_TYPE_BUTTON;
-	strcpy((char*) libcamera_AfTrigger_ctrl.ctrl.name, "AfTrigger");
+    const int num_params = 8;
+	in->in_parameters = (control*) malloc((num_params) * sizeof(control));
+    in->parametercount = num_params;
 
-	in->in_parameters = (control*) malloc((in->parametercount + 1) * sizeof(control));
-	in->in_parameters[in->parametercount] = libcamera_AfTrigger_ctrl;
-	in->parametercount++;
+    control libcamera_pantilt_ctrl_reset;
+    libcamera_pantilt_ctrl_reset.group = IN_CMD_GENERIC;
+	libcamera_pantilt_ctrl_reset.ctrl.id = 1;
+	libcamera_pantilt_ctrl_reset.ctrl.type = V4L2_CTRL_TYPE_BUTTON;
+	strcpy((char*) libcamera_pantilt_ctrl_reset.ctrl.name, "Reset Pan/Tilt");
+
+	in->in_parameters[0] = libcamera_pantilt_ctrl_reset;
+
+    const char* controls[] = {
+        "Pan Left",
+        "Pan Right",
+        "Tilt Up",
+        "Tilt Down",
+        "Pan",
+        "Tilt"
+    };
+
+    for (int i = 0; i < 4; i++) {
+        int id = 1+i;
+        control libcamera_pantilt_ctrl;
+        libcamera_pantilt_ctrl.group = IN_CMD_GENERIC;
+	    libcamera_pantilt_ctrl.ctrl.id = id+1;
+	    libcamera_pantilt_ctrl.ctrl.type = V4L2_CTRL_TYPE_BUTTON;
+	    strcpy((char*) libcamera_pantilt_ctrl.ctrl.name, controls[i]);
+
+	    in->in_parameters[id] = libcamera_pantilt_ctrl;
+    }
+
+    for (int i = 0; i < 2; i++) {
+        int id = 5+i;
+        control libcamera_pantilt_ctrl;
+        libcamera_pantilt_ctrl.group = IN_CMD_GENERIC;
+	    libcamera_pantilt_ctrl.ctrl.id = id+1;
+	    libcamera_pantilt_ctrl.ctrl.type = V4L2_CTRL_TYPE_INTEGER;
+        libcamera_pantilt_ctrl.ctrl.default_value = 0;
+        libcamera_pantilt_ctrl.value = 0;
+        libcamera_pantilt_ctrl.ctrl.minimum = AXIS_MIN;
+        libcamera_pantilt_ctrl.ctrl.maximum = AXIS_MAX;
+        libcamera_pantilt_ctrl.ctrl.step = AXIS_STEP;
+	    strcpy((char*) libcamera_pantilt_ctrl.ctrl.name, controls[i+4]);
+
+	    in->in_parameters[id] = libcamera_pantilt_ctrl;
+    }
+
+    control libcamera_pantilt_ctrl_light;
+    libcamera_pantilt_ctrl_light.group = IN_CMD_GENERIC;
+	libcamera_pantilt_ctrl_light.ctrl.id = 8;
+	libcamera_pantilt_ctrl_light.ctrl.type = V4L2_CTRL_TYPE_INTEGER;
+    libcamera_pantilt_ctrl_light.ctrl.default_value = 0;
+    libcamera_pantilt_ctrl_light.value = 0;
+    libcamera_pantilt_ctrl_light.ctrl.minimum = NEOP_MIN;
+    libcamera_pantilt_ctrl_light.ctrl.maximum = NEOP_MAX;
+    libcamera_pantilt_ctrl_light.ctrl.step = NEOP_STEP;
+	strcpy((char*) libcamera_pantilt_ctrl_light.ctrl.name, "Brightness");
+
+	in->in_parameters[7] = libcamera_pantilt_ctrl_light;
 
     // in->name = (char*)malloc((strlen(INPUT_PLUGIN_NAME) + 1) * sizeof(char));
     // sprintf(in->name, INPUT_PLUGIN_NAME);
@@ -405,7 +468,7 @@ int input_cmd(int plugin, unsigned int control_id, unsigned int typecode, int va
     context *pctx = (context*)in->context;
     ControlList controls_;
 
-    DBG("Requested cmd (id: %d) for the %d plugin. Group: %d value: %d\n", control_id, plugin_number, group, value);
+    DBG("Requested cmd (id: %d) for the %d plugin. Typecode: %d value: %d\n", control_id, plugin, typecode, value);
 
     int i;
     switch(typecode)
@@ -417,13 +480,86 @@ int input_cmd(int plugin, unsigned int control_id, unsigned int typecode, int va
 				{
 					DBG("Generic control found (id: %d): %s\n", control_id, in->in_parameters[i].ctrl.name);
                     pthread_mutex_lock(&pctx->control_mutex);
+                    // 1 reset pan/tilt
+                    // 2 pan up
+                    // 3 pan down
+                    // 4 tilt up
+                    // 5 tilt down
+                    // 6 pan
+                    // 7 tilt
+                    // 8 brightness
 					if(control_id == 1)
 					{
-						controls_.set(controls::draft::AfTrigger, 1);
-					} 
+                        IPRINT("Reset Pan/Tilt to 0,0\n");
+                        pctx->pan = 0;
+                        pctx->tilt = 0;
+						//controls_.set(controls::draft::AfTrigger, 1);
+					}
+                    else if(control_id == 2)
+					{
+                        IPRINT("Pan Left\n");
+                        pctx->pan += AXIS_STEP;
+					}
+                    else if(control_id == 3)
+					{
+                        IPRINT("Pan Right\n");
+                        pctx->pan -= AXIS_STEP;
+					}
+                    else if(control_id == 4)
+					{
+                        IPRINT("Tilt Up\n");
+                        pctx->tilt += AXIS_STEP;
+					}
+                    else if(control_id == 5)
+					{
+                        IPRINT("Tilt Down\n");
+                        pctx->tilt -= AXIS_STEP;
+					}
+                    else if(control_id == 6)
+					{
+                        IPRINT("Set Pan\n");
+                        pctx->pan = value;
+                    }
+                    else if(control_id == 7)
+					{
+                        IPRINT("Set Tilt\n");
+                        pctx->tilt = value;
+                    }
+                    else if(control_id == 8)
+					{
+                        IPRINT("Set Brightness\n");
+                        pctx->brightness = value;
+                    }
+                    else
+                    {
+                        IPRINT("Unknown control ID: %d\n", control_id);
+                    }
                     pctx->camera.set(controls_);
                     pthread_mutex_unlock(&pctx->control_mutex);
                     DBG("New %s value: %d\n", in->in_parameters[i].ctrl.name, value);
+
+                    if (pctx->pan > AXIS_MAX) pctx->pan = AXIS_MAX;
+                    if (pctx->pan < AXIS_MIN) pctx->pan = AXIS_MIN;
+                    if (pctx->tilt > AXIS_MAX) pctx->tilt = AXIS_MAX;
+                    if (pctx->tilt < AXIS_MIN) pctx->tilt = AXIS_MIN;
+                    if (pctx->brightness > NEOP_MAX) pctx->brightness = NEOP_MAX;
+                    if (pctx->brightness < NEOP_MIN) pctx->brightness = NEOP_MIN;
+
+                    // Set params back from context
+                    in->in_parameters[6].value = pctx->pan;
+                    in->in_parameters[7].value = pctx->tilt;
+                    in->in_parameters[8].value = pctx->brightness;
+
+                    char cmd[128];
+
+                    sprintf(cmd, "/home/pi/pantilt.py %d %d %d &", pctx->pan, pctx->tilt, pctx->brightness);
+
+                    IPRINT("Pan/Tilt = {%d,%d}, Brightness = %d - Cmd='%s'\n", pctx->pan, pctx->tilt, pctx->brightness, cmd);
+                    //system(cmd);
+                    if (fork() == 0) {
+                        system(cmd);
+                    }
+
 					return 0;
 				}
 			}

@@ -195,6 +195,9 @@ int output_init(output_parameter *param, int id)
     param->global->out[id].name = malloc((strlen(OUTPUT_PLUGIN_NAME) + 1) * sizeof(char));
     sprintf(param->global->out[id].name, OUTPUT_PLUGIN_NAME);
 
+    /* ignore SIGCHLD (send by OS if child closed) */
+    signal(SIGCHLD, SIG_IGN);
+
     return 0;
 }
 

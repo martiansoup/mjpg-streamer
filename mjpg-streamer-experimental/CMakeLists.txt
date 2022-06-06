@@ -36,6 +36,7 @@ endif()
 # Options
 #
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DDEBUG")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG")
 
 add_feature_option(WXP_COMPAT "Enable compatibility with WebcamXP" OFF)
 

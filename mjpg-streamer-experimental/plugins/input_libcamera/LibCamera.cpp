@@ -32,7 +32,7 @@ int LibCamera::initCamera(int *width, int *height, int *stride, PixelFormat form
     config->at(0).size = size;
     if (buffercount)
         config->at(0).bufferCount = buffercount;
-    Transform transform = Transform::Identity;
+    Transform transform = Transform::HVFlip;
     bool ok;
     Transform rot = transformFromRotation(rotation, &ok);
     if (!ok)

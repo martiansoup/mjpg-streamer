@@ -2,6 +2,9 @@ mjpg-streamer
 =============
 
 This is a fork of http://sourceforge.net/projects/mjpg-streamer/ with added support for the Raspberry Pi camera via the input_raspicam plugin.
+And libcamera support from https://github.com/ArduCAM/mjpg-streamer.
+
+This fork also adds support for controlling the [Pimoroni Pan-Tilt Hat](https://shop.pimoroni.com/products/pan-tilt-hat?variant=22408353287).
 
 mjpg-streamer is a command line application that copies JPEG frames from one
 or more input plugins to multiple output plugins. It can be used to stream
