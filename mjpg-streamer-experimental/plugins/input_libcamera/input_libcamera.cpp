@@ -546,9 +546,9 @@ int input_cmd(int plugin, unsigned int control_id, unsigned int typecode, int va
                     if (pctx->brightness < NEOP_MIN) pctx->brightness = NEOP_MIN;
 
                     // Set params back from context
-                    in->in_parameters[6].value = pctx->pan;
-                    in->in_parameters[7].value = pctx->tilt;
-                    in->in_parameters[8].value = pctx->brightness;
+                    in->in_parameters[5].value = pctx->pan;
+                    in->in_parameters[6].value = pctx->tilt;
+                    in->in_parameters[7].value = pctx->brightness;
 
                     char cmd[128];
 
